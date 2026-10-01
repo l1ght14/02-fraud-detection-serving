@@ -1,5 +1,12 @@
+# Build context exclusions.
+#
+# NOTE: artifacts/ is deliberately NOT ignored here. The Dockerfile copies the
+# trained model into the image, so excluding it makes `docker build` fail with
+# 'failed to calculate checksum ... "/artifacts": not found'. The model stays out
+# of *git* via .gitignore; that is a separate concern from the Docker build
+# context, and conflating the two breaks the image.
+
 data/
-artifacts/
 .git/
 .github/
 .pytest_cache/
@@ -10,3 +17,7 @@ tests/
 .env
 .venv/
 venv/
+# Ignore the training outputs the image does not need. The .joblib must stay.
+artifacts/*.png
+artifacts/*.csv
+artifacts/*.json
