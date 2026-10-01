@@ -1,10 +1,12 @@
 name: tests
 
+# No `branches:` filter on purpose. This repo's default branch is `master`, and a
+# workflow listening only to `main` never runs -- it shows as "active" while
+# producing zero runs, which reads as a passing project to anyone who does not
+# open the Actions tab.
 on:
-  # workflow_dispatch so CI can be re-run on demand; the initial gh repo create --push`n  # does not fire Actions, so without this a reviewer sees no checks at all.
   workflow_dispatch:
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -38,11 +40,43 @@ jobs:
   # The README claims a container that runs. This is the only thing that keeps
   # that claim honest: an image that builds but cannot start is the most common
   # way a portfolio deployment project quietly stops being true.
+  #
+  # Requires a committed artifacts/model.joblib. That file is gitignored because
+  # it is ~10MB of fitted forest, so the job trains first if it is missing rather
+  # than failing on a fresh clone.
   docker:
     runs-on: ubuntu-latest
     needs: test
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Cache the Kaggle dataset
+        id: kaggle
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: fraud-${{ hashFiles('data/creditcard.csv') }}
+
+      - name: Download the dataset
+        if: steps.kaggle.outputs.cache-hit != 'true'
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          python -m kaggle datasets download -d mlg-ulb/creditcardfraud -p data/ --unzip
+
+      - name: Train if no artifact exists
+        if: steps.kaggle.outputs.cache-hit != 'true'
+        run: python train.py
 
       - name: Build image
         run: docker build -t fraud-api:ci .
