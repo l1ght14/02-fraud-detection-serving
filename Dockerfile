@@ -23,7 +23,10 @@ RUN apt-get update \
 RUN useradd --create-home --uid 1000 app
 WORKDIR /srv
 COPY --from=builder /deps /srv/deps
-ENV PYTHONPATH=/srv/deps:/srv
+# Both entries matter. PYTHONPATH lets `import uvicorn` resolve; the second entry
+# puts the console scripts on PATH for anything that shells out to them.
+ENV PYTHONPATH=/srv/deps:/srv \
+    PATH=/srv/deps/bin:$PATH
 
 COPY --chown=app:app api.py train.py ./
 COPY --chown=app:app src ./src
@@ -32,7 +35,11 @@ COPY --chown=app:app artifacts ./artifacts
 USER app
 EXPOSE 8000
 
+# `python -m uvicorn` rather than bare `uvicorn`: with --target installing into
+# /srv/deps, the console script lives in /srv/deps/bin and the bare name fails with
+# 'executable file not found in $PATH'. Invoking the module depends only on
+# PYTHONPATH, so it cannot drift.
 # No --reload, no --workers>1 note: the model is loaded once per process, so
 # multiple workers means multiple copies in RAM. For 300 trees that is fine; for
 # a much larger model, serve one process behind a load balancer instead.
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
